@@ -55,6 +55,84 @@ Microsoft WebView2가 없으면 설치 프로그램이 공식 서버에서 받�
 
 업데이트는 사용자 확인 후 진행합니다. 앱은 내려받은 파일의 배포자 서명·크기·SHA-256을 검증합니다. 업데이트 확인이나 다운로드만으로 게임을 재접속할 필요는 없으며, 실제 설치 시 앱과 연결된 게임이 종료됩니다.
 
+## 배포자용: 새 버전 올리기
+
+배포 위치는 **[wonkee-choi/gersang-doeja-updates의 Releases](https://github.com/wonkee-choi/gersang-doeja-updates/releases)**입니다. 아래 스크립트가 새 Release 생성·파일 업로드·최신 버전 지정을 처리하므로 웹에서 파일을 직접 첨부할 필요가 없습니다.
+
+### 준비할 파일
+
+새 버전의 **빌드와 검증이 끝난 Setup 파일 1개**, **변경 내용을 적은 UTF-8 텍스트 파일 1개**를 준비합니다. 예를 들어 다음 버전을 `0.8.32`로 만든 경우:
+
+| 준비 항목 | 이 개발 PC의 경로 예시 | 용도 |
+| --- | --- | --- |
+| 설치 파일 | `D:\dev\gersang-doeja\packages\거상이되자-Setup-0.8.32-x64.exe` | 새 PC 설치와 기존 앱 업데이트에 함께 사용 |
+| 변경 내용 | `D:\dev\gersang-doeja\packages\release-notes-0.8.32.txt` | 앱의 업데이트 안내 및 GitHub Release 설명 |
+
+**`0.8.32`는 다음 배포를 설명하기 위한 예시이며, 해당 설치 파일이 이미 만들어져 있다는 뜻은 아닙니다.** 배포 스크립트는 앱이나 설치 파일을 새로 빌드하지 않습니다. 새 Setup 제작 시 앱 버전, 설치 파일 버전, 패키징 스크립트의 출력 버전을 함께 올린 뒤 검증해야 합니다. 현재 관련 파일은 `src/Native/AssemblyInfo.cs`, `tools/setup.iss`, `tools/package-setup.ps1`입니다. 기존 EXE의 파일명만 바꾸는 것으로 버전이 바뀌지는 않습니다.
+
+이미 공개한 버전은 덮어쓰지 않습니다. 현재 공개된 `0.8.31.0` 다음에는 그보다 높은 파일 버전(예: `0.8.32.0`)을 사용해야 합니다.
+
+### 실행 환경
+
+현재 배포 도구는 **개발 PC의 `D:\dev\gersang-doeja` 전체 작업 폴더**에서 사용합니다. 공개 저장소의 `Source code` 압축 파일에는 이 개발 도구가 포함되지 않습니다.
+
+- PowerShell 7, Python 3.9 이상, Git 및 Git Credential Manager가 필요합니다. 아래 명령은 현재 개발 PC에서 확인한 Python 3.12 경로를 사용합니다.
+- Git Credential Manager에 로그인된 GitHub 계정은 배포 저장소 소유자인 `wonkee-choi`여야 합니다. 비밀번호나 토큰을 명령에 직접 넣지 않습니다.
+- 서명에는 **기존 배포 PC와 같은 Windows 사용자**를 사용합니다. 서명 키는 `%LOCALAPPDATA%\GersangDoeja\Private\update-signing-v1.dpapi`에 Windows 사용자 암호화로 저장됩니다. 다른 PC·사용자로 옮기거나 키를 새로 만들면 기존 앱이 서명을 신뢰하지 못하므로, 배포 환경을 옮길 때는 별도 이전 작업이 필요합니다. 이 파일은 공개 저장소나 설치 파일에 넣지 않습니다.
+
+### 실행 순서
+
+1. 새 버전 Setup이 준비됐는지 확인합니다.
+2. PowerShell 7을 열고 아래처럼 변경 내용을 작성합니다. 이미 UTF-8 변경 내용 파일이 있다면 작성 단계는 생략합니다.
+
+```powershell
+Set-Location 'D:\dev\gersang-doeja'
+
+@'
+거상이되자 0.8.32
+
+- 이번 버전에서 변경한 내용을 여기에 적습니다.
+- 실제로 확인한 검사 결과와 필요한 사용자 조치를 적습니다.
+'@ | Set-Content -LiteralPath '.\packages\release-notes-0.8.32.txt' -Encoding utf8
+```
+
+3. **새 버전을 실제로 공개할 준비가 됐을 때** 다음 명령을 실행합니다. 파일 경로의 버전은 준비한 Setup과 변경 내용 파일에 맞춥니다.
+
+```powershell
+Set-Location 'D:\dev\gersang-doeja'
+
+& .\tools\publish-update.ps1 `
+  -SetupPath '.\packages\거상이되자-Setup-0.8.32-x64.exe' `
+  -NotesPath '.\packages\release-notes-0.8.32.txt' `
+  -PythonPath 'C:\Users\Administrator\AppData\Local\Programs\Python\Python312\python.exe'
+```
+
+`-SetupPath`와 `-NotesPath`는 필수입니다. `-PythonPath`를 생략하면 `PATH`에서 찾은 `python.exe`를 사용합니다. 배포 명령은 게임 접속이나 사냥을 시작하지 않으며, 실행 중인 앱·게임을 종료하지 않습니다.
+
+### 스크립트가 자동으로 하는 일
+
+1. 배포용 서명·검증 도구를 빌드합니다.
+2. Setup의 실제 파일 버전·크기·SHA-256을 읽고, 서명된 `update.json`을 **Setup과 같은 폴더**에 생성합니다. 직접 작성하거나 편집할 필요가 없습니다.
+3. 기존 공개 키로 서명과 설치 파일을 검증하고, 로그인한 GitHub 계정이 설정된 배포 저장소와 일치하는지 확인합니다.
+4. GitHub에 `v0.8.32.0` 같은 태그의 초안 Release를 만들고 아래 **두 파일만** 업로드합니다.
+5. 업로드 크기·이름과 서버가 반환한 해시를 확인한 후 Release를 공개하고 최신 버전으로 지정합니다.
+
+| GitHub Releases에 올라가는 파일 | 생성·업로드 방식 |
+| --- | --- |
+| `GersangDoeja-Setup-0.8.32.0-x64.exe` | 준비한 한글 이름의 Setup을 영문 배포 파일명으로 올림. 파일 내용은 동일 |
+| `update.json` | 배포 도구가 버전·주소·서명 정보를 자동 생성해 올림 |
+
+변경 내용 텍스트는 Release 설명에 사용합니다. 앱 소스, 개발 폴더 전체, 개인 `Data`, 계정·비밀번호·기록, 서명 개인 키는 업로드 대상이 아닙니다. **Setup EXE만 웹에 수동 업로드하면 앱 내 업데이트는 연결되지 않습니다.**
+
+### 배포 결과 확인과 오류 처리
+
+- 성공하면 명령 출력에 `release` 주소와 업로드한 두 파일의 목록이 표시됩니다. [최신 배포 페이지](https://github.com/wonkee-choi/gersang-doeja-updates/releases/latest)에서 버전과 두 첨부 파일을 확인합니다.
+- 기존 앱에서 **설정 → 프로그램 업데이트 → 업데이트 확인**을 눌러 새 버전 안내가 나오는지 확인합니다. 자동 확인은 앱 시작 후 약 2.5초와 실행 중 6시간 간격으로 수행합니다. 실제 설치는 사용자가 설치 버튼을 누르고 확인한 뒤 진행됩니다.
+- `already published` 오류가 나오면 이미 공개한 버전입니다. 새 버전 번호로 Setup을 다시 제작합니다.
+- 인증 오류가 나오면 Git Credential Manager의 GitHub 로그인을 갱신한 뒤 다시 실행합니다. 인증 정보는 README나 변경 내용에 적지 않습니다.
+- 업로드 중 실패하면 오류와 GitHub의 초안 Release 상태를 확인한 뒤 **같은 Setup·변경 내용으로 명령을 다시 실행**할 수 있습니다. 이미 공개된 Release를 이 명령으로 덮어쓸 수는 없습니다.
+- 서명 검증 오류가 나오면 기존 배포 PC·Windows 사용자·공개 키가 맞는지 확인합니다. 검증을 끄거나 `update.json`을 수동 수정하지 않습니다.
+
 ## 설정·개인 데이터 보존
 
 - 계정·사냥 설정·표본은 기존 앱의 `Data`에 보존합니다. 업데이트가 초기 데이터로 기존 파일을 덮어쓰지 않습니다.
